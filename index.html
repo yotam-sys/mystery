@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mystery Player Showdown</title>
+<meta name="description" content="Live multiplayer NBA guessing game. Clues drop every few seconds; guess the mystery player before your friends do.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Teko:wght@500;600;700&family=Barlow:wght@400;500;600;700&family=Share+Tech+Mono&display=swap">
 <style>
@@ -97,7 +98,7 @@ input.code { font-family: var(--f-led); font-size: 22px; letter-spacing: .3em; t
 .clues li.locked { color: var(--muted); opacity: .55; border-style: dashed; }
 @keyframes drop { from { transform: translateY(-6px); } to { transform: none; } }
 form.guess { display: flex; gap: 8px; }
-form.guess input { flex: 1; }
+form.guess input { width: 100%; }
 form.guess .btn { flex: 0 0 auto; }
 .verdict { text-align: center; padding: 10px; border-radius: 10px; font-family: var(--f-display); font-size: 28px; line-height: 1; text-transform: uppercase; }
 .verdict.ok { color: var(--good); border: 2px solid var(--good); }
@@ -117,6 +118,30 @@ form.guess .btn { flex: 0 0 auto; }
 .rules b { color: var(--ink); }
 .note { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
 @media (prefers-reduced-motion: reduce) { .clues li.new, .answer .who, .shake { animation: none; } }
+
+.pl.off { opacity: .45; }
+.pl .nm em + em { margin-left: 4px; }
+.seg { display: flex; gap: 6px; flex-wrap: wrap; }
+.seg button { flex: 1 1 0; min-width: 0; padding: 10px 8px; border-radius: 9px; border: 2px solid var(--line); background: var(--bg); color: var(--ink); font-family: var(--f-body); font-weight: 600; font-size: 15px; cursor: pointer; }
+.seg button.on { border-color: var(--ball); background: rgba(255,122,26,.15); color: var(--ball); }
+.seg button:disabled { cursor: default; }
+.seg button:focus-visible { outline: 3px solid var(--led); outline-offset: 2px; }
+.ac { position: relative; flex: 1; min-width: 0; }
+.sug { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20; list-style: none; margin: 0; padding: 4px; background: var(--panel); border: 2px solid var(--ball); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+.sug li { padding: 10px 12px; border-radius: 7px; cursor: pointer; font-weight: 600; }
+.sug li.sel, .sug li:hover { background: rgba(255,122,26,.18); color: var(--ball); }
+.pick { display: flex; flex-direction: column; gap: 6px; border: 2px dashed var(--ball); border-radius: 10px; padding: 10px; }
+.opt { text-align: left; padding: 11px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-family: var(--f-body); font-weight: 600; font-size: 16px; cursor: pointer; }
+.opt:hover, .opt:focus-visible { border-color: var(--ball); color: var(--ball); outline: none; }
+.hint { font-size: 12px; color: var(--muted); }
+.reacts { display: flex; gap: 6px; justify-content: center; }
+.react { width: 46px; height: 42px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-size: 22px; cursor: pointer; }
+.react:active { transform: scale(.92); }
+.floater { position: fixed; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); z-index: 50; display: flex; flex-direction: column; align-items: center; pointer-events: none; animation: rise 2.2s ease-out forwards; }
+.floater .fe { font-size: 40px; line-height: 1; }
+.floater .fn { font-size: 12px; font-weight: 700; text-shadow: 0 1px 3px #000; }
+@keyframes rise { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 1; } 100% { transform: translateY(-260px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .floater { animation-duration: 1.2s; } }
 </style>
 </head>
 <body>
@@ -125,367 +150,8 @@ form.guess .btn { flex: 0 0 auto; }
     <div class="brand"><h1>Mystery <span>Player</span></h1><small>NBA guessing showdown</small></div>
     <div class="clock"><div class="big" id="jClock">--</div><div class="lbl" id="jLbl">Pregame</div></div>
   </div>
-  <div id="app"></div>
+  <div id="app"><div class="panel"><h2>Loading…</h2></div></div>
 </div>
-
-<datalist id="names"></datalist>
-
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getDatabase, ref, set, update as fbUpdate, get, remove, onValue, onDisconnect, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-
-// ===== PASTE YOUR FIREBASE CONFIG HERE (see README.md, step 2) =====
-const firebaseConfig = {
-  apiKey: "AIzaSyAIHK5B4j3Ce0ZM9lWVNa_e71reQSsWGLw",
-  authDomain: "nba1-4cb83.firebaseapp.com",
-  databaseURL: "https://nba1-4cb83-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "nba1-4cb83",
-  storageBucket: "nba1-4cb83.firebasestorage.app",
-  messagingSenderId: "44817531262",
-  appId: "1:44817531262:web:18eeb3807bdeded2a2732f",
-  measurementId: "G-LW9BVZ2C49"
-};
-// ===================================================================
-// ---------- player database: 6 clues each, hardest first ----------
-const PLAYERS = [
-  { name: "Michael Jordan", alias: ["mj","jordan"], clues: ["Was drafted 3rd overall in 1984, behind Hakeem Olajuwon and Sam Bowie.","Played college basketball at North Carolina and hit the title-winning shot as a freshman.","Retired three separate times during his career.","Spent 1994 playing minor league baseball.","Won six championships and six Finals MVPs in the 1990s.","Wore #23 for the Chicago Bulls."] },
-  { name: "Kobe Bryant", alias: ["kobe"], clues: ["Was drafted 13th overall in 1996 by the Charlotte Hornets, then traded.","Went straight to the NBA from Lower Merion High School in Pennsylvania.","Scored 81 points in a single game in 2006.","Scored 60 points in the final game of his career.","Wore both #8 and #24 and both are retired.","Spent all 20 seasons with the Los Angeles Lakers. Nickname: Black Mamba."] },
-  { name: "Shaquille O'Neal", alias: ["shaq","oneal","shaquille oneal"], clues: ["Made only one three-pointer in his entire NBA career.","Played college basketball at LSU.","Was the #1 pick in 1992 by the Orlando Magic.","Played for six different NBA teams.","Won three straight Finals MVPs from 2000 to 2002.","Huge center known as Shaq."] },
-  { name: "Tim Duncan", alias: ["duncan"], clues: ["Grew up in the US Virgin Islands and trained as a competitive swimmer.","Stayed all four years at Wake Forest.","Was the #1 overall pick in 1997.","Nicknamed The Big Fundamental.","Won five championships, all with the same team.","Spent 19 seasons with the San Antonio Spurs."] },
-  { name: "Larry Bird", alias: ["bird"], clues: ["Enrolled at Indiana University but left after less than a month.","Lost the 1979 NCAA final playing for Indiana State.","Won three MVP awards in a row from 1984 to 1986.","Later won Coach of the Year with the Indiana Pacers.","Nicknamed Larry Legend and the Hick from French Lick.","Wore #33 for the Boston Celtics."] },
-  { name: "Magic Johnson", alias: ["magic","earvin johnson"], clues: ["Won Finals MVP as a rookie while playing center in the deciding game.","Won the 1979 NCAA title with Michigan State.","His real first name is Earvin.","A 6-foot-9 point guard famous for no-look passes.","Won five championships in the 1980s.","Wore #32 for the Showtime Lakers."] },
-  { name: "Kareem Abdul-Jabbar", alias: ["kareem","abdul jabbar","lew alcindor"], clues: ["Was born Ferdinand Lewis Alcindor Jr.","Won three NCAA titles at UCLA.","Holds the record with six regular-season MVP awards.","Famous for an almost unblockable skyhook.","Was the NBA's all-time scoring leader for almost 39 years.","Played for the Milwaukee Bucks and the Los Angeles Lakers."] },
-  { name: "Dirk Nowitzki", alias: ["dirk","nowitzki"], clues: ["Was drafted 9th in 1998 by Milwaukee and traded on draft night.","Famous for a one-legged fadeaway jumper.","Won the 2007 MVP award.","Won the 2011 Finals MVP by beating the Miami Heat.","Was born in Wurzburg, Germany.","Played all 21 seasons for the Dallas Mavericks."] },
-  { name: "Allen Iverson", alias: ["iverson","ai"], clues: ["Played college basketball at Georgetown.","Was the #1 overall pick in 1996.","Won the 2001 MVP award despite being listed at 6 feet tall.","Gave a famous press conference about practice.","Crossed over Michael Jordan as a rookie.","Nicknamed The Answer, wore #3 for the 76ers."] },
-  { name: "Hakeem Olajuwon", alias: ["hakeem","olajuwon"], clues: ["Grew up in Lagos, Nigeria, playing soccer as a goalkeeper.","Played college basketball for Houston's Phi Slama Jama.","Was picked #1 in 1984, ahead of Michael Jordan.","Won MVP, Defensive Player of the Year, and Finals MVP in the same season.","Famous for the Dream Shake post move.","Won two championships with the Houston Rockets."] },
-  { name: "Stephen Curry", alias: ["steph","steph curry","curry"], clues: ["Was drafted 7th overall in 2009.","Starred at Davidson College.","His father Dell also played in the NBA.","Became the first unanimous MVP in 2016.","Holds the record for most three-pointers made in NBA history.","Wears #30 for the Golden State Warriors."] },
-  { name: "LeBron James", alias: ["lebron","king james"], clues: ["Grew up in Akron, Ohio.","Went straight from high school to #1 overall pick in 2003.","Has won championships with three different teams.","Led a comeback from 3-1 down in the 2016 Finals.","Passed Kareem as the NBA's all-time leading scorer in 2023.","Nicknamed King James."] },
-  { name: "Wilt Chamberlain", alias: ["wilt","chamberlain"], clues: ["Played a season with the Harlem Globetrotters before joining the NBA.","Played college basketball at Kansas.","Averaged 50.4 points per game in the 1961-62 season.","Once grabbed 55 rebounds in a single game.","Never fouled out of an NBA game.","Scored 100 points in one game in 1962."] },
-  { name: "Bill Russell", alias: ["russell"], clues: ["Won two NCAA titles with the University of San Francisco.","Won Olympic gold in 1956.","Became the first Black head coach in NBA history, as a player-coach.","The NBA Finals MVP award is named after him.","Won 11 championships in 13 seasons.","Legendary center for the Boston Celtics."] },
-  { name: "Dwyane Wade", alias: ["wade","d wade","dwayne wade"], clues: ["Led Marquette to the Final Four in 2003.","Was drafted 5th overall in 2003.","Won Finals MVP in 2006.","Teamed up with LeBron James and Chris Bosh.","Nicknamed Flash.","Wore #3 for the Miami Heat."] },
-  { name: "Kevin Garnett", alias: ["garnett","kg"], clues: ["Was picked 5th in 1995 straight out of high school.","Won the 2004 MVP with the Minnesota Timberwolves.","Won Defensive Player of the Year in 2008.","Screamed Anything is possible! after winning the 2008 title.","Nicknamed The Big Ticket.","Legend for Minnesota and the Boston Celtics."] },
-  { name: "Yao Ming", alias: ["yao"], clues: ["Played professionally for the Shanghai Sharks.","Was the #1 overall pick in 2002.","Carried his country's flag at the 2008 Olympic opening ceremony.","Stood 7 feet 6 inches tall.","Played center for the Houston Rockets.","China's biggest basketball superstar."] },
-  { name: "Dennis Rodman", alias: ["rodman","the worm"], clues: ["Worked as an airport janitor before going to college.","Played college ball at Southeastern Oklahoma State.","Won two Defensive Player of the Year awards with the Pistons.","Led the league in rebounding seven seasons in a row.","Famous for constantly dyed hair.","Nicknamed The Worm, won three titles with the 90s Bulls."] },
-  { name: "Steve Nash", alias: ["nash"], clues: ["Was born in South Africa and grew up in Canada.","Played college basketball at Santa Clara.","Won back-to-back MVPs in 2005 and 2006.","Joined the 50-40-90 shooting club multiple times.","Ran the Seven Seconds or Less offense in Phoenix.","Canada's greatest point guard."] },
-  { name: "Scottie Pippen", alias: ["pippen"], clues: ["Started at Central Arkansas as the team's student manager.","Was drafted 5th by Seattle in 1987 and traded on draft night.","Won Olympic gold in 1992 and 1996.","Won six championships in the 1990s.","Michael Jordan's famous sidekick.","Wore #33 for the Chicago Bulls."] },
-  { name: "Nikola Jokic", alias: ["jokic","the joker"], clues: ["Was picked 41st in 2014 while a fast-food commercial played on TV.","Grew up in Sombor, Serbia.","Loves harness racing horses.","Has won multiple MVP awards.","Won the 2023 Finals MVP.","Center for the Denver Nuggets, nicknamed The Joker."] },
-  { name: "Giannis Antetokounmpo", alias: ["giannis","antetokounmpo","greek freak"], clues: ["Sold goods on the streets of Athens as a kid.","Was drafted 15th overall in 2013.","His parents are from Nigeria.","Scored 50 points in the title-clinching game of the 2021 Finals.","Won back-to-back MVPs in 2019 and 2020.","Nicknamed The Greek Freak."] }
-];
-const DECOYS = ["Kevin Durant","Chris Paul","Russell Westbrook","James Harden","Kawhi Leonard","Charles Barkley","Karl Malone","John Stockton","Patrick Ewing","David Robinson","Reggie Miller","Vince Carter","Tracy McGrady","Paul Pierce","Ray Allen","Jason Kidd","Gary Payton","Isiah Thomas","Julius Erving","Moses Malone","Oscar Robertson","Jerry West","Elgin Baylor","Pau Gasol","Tony Parker","Manu Ginobili","Carmelo Anthony","Derrick Rose","Damian Lillard","Luka Doncic","Jayson Tatum","Joel Embiid","Shai Gilgeous-Alexander","Victor Wembanyama","Anthony Davis","Kyrie Irving","Klay Thompson","Draymond Green","Chris Bosh","Dwight Howard","Pete Maravich","Clyde Drexler","Dominique Wilkins","Ja Morant","Kevin McHale","Bob Cousy"];
-
-const CLUE_MS = 6000, GRACE_MS = 6000, REVEAL_MS = 9000, ROUNDS = 5;
-const COLORS = ["#FF7A1A","#3BE38F","#4FB6FF","#FF5DB1","#FFC23D","#B38CFF","#5EF0E0","#FF8F8F"];
-const pts = c => (6 - c) * 100;
-
-// ---------- name matching ----------
-const norm = s => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z]/g, "");
-const KNOWN = [];
-PLAYERS.forEach((p, i) => KNOWN.push({ name: p.name, idx: i, keys: [p.name, ...p.alias].map(norm) }));
-DECOYS.forEach(n => KNOWN.push({ name: n, idx: -1, keys: [norm(n)] }));
-const lastCount = {};
-KNOWN.forEach(k => { const ln = norm(k.name.split(" ").slice(-1)[0]); lastCount[ln] = (lastCount[ln] || 0) + 1; });
-KNOWN.forEach(k => { const ln = norm(k.name.split(" ").slice(-1)[0]); if (lastCount[ln] === 1 && !k.keys.includes(ln)) k.keys.push(ln); });
-function lookup(guess) {
-  const g = norm(guess); if (!g) return null;
-  for (const k of KNOWN) if (k.keys.includes(g)) return k;
-  // forgive one typo on longer names
-  if (g.length >= 6) for (const k of KNOWN) for (const key of k.keys) if (key.length >= 6 && lev(g, key) <= 1) return k;
-  return null;
-}
-function lev(a, b) {
-  if (Math.abs(a.length - b.length) > 1) return 9;
-  const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
-  for (let j = 1; j <= b.length; j++) d[0][j] = j;
-  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
-    d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
-  return d[a.length][b.length];
-}
-document.getElementById("names").innerHTML = KNOWN.map(k => k.name).sort().map(n => '<option value="' + n.replace(/"/g, "&quot;") + '">').join("");
-
-// ---------- network layer (Firebase Realtime Database) with solo fallback ----------
-const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
-const configured = typeof firebaseConfig.databaseURL === "string" && firebaseConfig.databaseURL.startsWith("https://");
-let db = null, net = configured ? "connecting" : "off"; // connecting | on | off
-let mode = "home"; // home | solo | online
-let myId = store.get("mp-id");
-if (!myId) { myId = "p" + Math.random().toString(36).slice(2, 10); store.set("mp-id", myId); }
-let me = { name: store.get("mp-name") || "", color: COLORS[Math.floor(Math.random() * COLORS.length)] };
-let hostClueAt = 0, hostPhaseAt = 0, lastClueSeen = -1, clueSeenAt = 0, homeErr = "";
-let remote = { players: {}, hostId: null, g: null, exists: false, loaded: false }, unsubs = [];
-
-if (configured) {
-  try {
-    db = getDatabase(initializeApp(firebaseConfig));
-    onValue(ref(db, ".info/connected"), s => { net = s.val() ? "on" : "connecting"; schedule(); });
-  } catch (e) { console.error(e); db = null; net = "off"; }
-}
-const gamePath = code => "games/" + code;
-
-function listen(code) {
-  stopListen();
-  remote = { players: {}, hostId: null, g: null, exists: false, loaded: false };
-  const base = gamePath(code);
-  unsubs.push(onValue(ref(db, base + "/players"), s => { remote.players = s.val() || {}; schedule(); }));
-  unsubs.push(onValue(ref(db, base + "/host"), s => { remote.hostId = s.val(); remote.exists = s.exists(); remote.loaded = true; schedule(); }));
-  unsubs.push(onValue(ref(db, base + "/g"), s => { remote.g = s.val(); schedule(); }));
-}
-function stopListen() { unsubs.forEach(u => u()); unsubs = []; }
-
-// Firebase can turn arrays with gaps into objects, so round results are stored as {r0: ..., r1: ...}
-const toArr = r => { const a = []; if (!r) return a; for (let i = 0; i < ROUNDS; i++) a.push(r["r" + i] || null); return a; };
-
-function setMe(patch) {
-  for (const k in patch) { if (patch[k] === null) delete me[k]; else me[k] = patch[k]; }
-  if (mode === "online" && db && me.code) {
-    const up = {};
-    ["name", "color", "res"].forEach(k => { if (k in patch) up[k] = patch[k]; });
-    if (Object.keys(up).length) fbUpdate(ref(db, gamePath(me.code) + "/players/" + myId), up).catch(console.error);
-    if ("g" in patch && me.host) set(ref(db, gamePath(me.code) + "/g"), patch.g).catch(console.error);
-  }
-  schedule();
-}
-function allPeers() {
-  if (mode !== "online") return [{ peer: "local", isMe: true, presence: me }];
-  const list = Object.entries(remote.players).map(([pid, p]) => pid === myId
-    ? { peer: pid, isMe: true, presence: me }
-    : { peer: pid, isMe: false, presence: Object.assign({}, p, { code: me.code, host: pid === remote.hostId, g: pid === remote.hostId ? remote.g : null }) });
-  if (!list.some(p => p.isMe)) list.push({ peer: myId, isMe: true, presence: me });
-  return list;
-}
-const inGame = () => allPeers().filter(p => p.presence && p.presence.code === me.code && p.presence.name);
-const host = () => inGame().find(p => p.presence.host && p.presence.g) || inGame().find(p => p.presence.host);
-const gameState = () => { const h = host(); return h ? h.presence.g : null; };
-const resOf = (p, g) => { const r = p.presence.res; return (g && r && r.game === g.id) ? toArr(r.r) : []; };
-const scoreOf = (p, g) => resOf(p, g).reduce((a, x) => a + (x && x.ok ? pts(x.c) : 0), 0);
-
-// ---------- host loop ----------
-function setG(patch) { setMe({ g: Object.assign({}, me.g, patch) }); }
-function hostStart() {
-  const order = PLAYERS.map((_, i) => i).sort(() => Math.random() - .5).slice(0, ROUNDS);
-  hostClueAt = Date.now();
-  setMe({ g: { id: Math.random().toString(36).slice(2, 8), phase: "round", round: 0, clue: 0, order } });
-}
-setInterval(() => {
-  if (!me.host || !me.g) return;
-  const g = me.g, now = Date.now(), players = inGame();
-  if (g.phase === "round") {
-    const allDone = players.length > 0 && players.every(p => resOf(p, g)[g.round] != null);
-    if (allDone) { hostPhaseAt = now; setG({ phase: "reveal" }); }
-    else if (g.clue < 5 && now - hostClueAt >= CLUE_MS) { hostClueAt = now; setG({ clue: g.clue + 1 }); }
-    else if (g.clue === 5 && now - hostClueAt >= GRACE_MS) { hostPhaseAt = now; setG({ phase: "reveal" }); }
-  } else if (g.phase === "reveal" && now - hostPhaseAt >= REVEAL_MS) {
-    if (g.round < ROUNDS - 1) { hostClueAt = now; setG({ phase: "round", round: g.round + 1, clue: 0 }); }
-    else setG({ phase: "final" });
-  }
-}, 250);
-setInterval(schedule, 200);
-
-// ---------- actions ----------
-function saveName() {
-  const v = (document.getElementById("nm").value || "").trim().slice(0, 16);
-  if (!v) { homeErr = "Type a name first."; render(true); return null; }
-  store.set("mp-name", v); me.name = v; return v;
-}
-function onlineReady() {
-  if (!db) { homeErr = configured ? "Couldn't reach Firebase. Check your config." : "Online play isn't set up yet. Paste your Firebase config into the file (see the README)."; render(true); return false; }
-  return true;
-}
-function goSolo() { if (!saveName()) return; mode = "solo"; me.code = "SOLO"; me.host = true; me.g = null; me.res = null; hostStart(); render(true); }
-async function goCreate() {
-  if (!saveName() || !onlineReady()) return;
-  homeErr = "Creating game…"; render(true);
-  try {
-    let code = "";
-    for (let tries = 0; tries < 5; tries++) {
-      code = Array.from({ length: 4 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ"[Math.floor(Math.random() * 24)]).join("");
-      if (!(await get(ref(db, gamePath(code) + "/host"))).exists()) break;
-    }
-    await set(ref(db, gamePath(code)), { host: myId, createdAt: serverTimestamp(), players: { [myId]: { name: me.name, color: me.color } } });
-    onDisconnect(ref(db, gamePath(code))).remove();
-    me.code = code; me.host = true; me.g = null; me.res = null; mode = "online"; homeErr = "";
-    listen(code); render(true);
-  } catch (e) { console.error(e); homeErr = "Couldn't create the game. Check your Firebase rules and config."; render(true); }
-}
-async function goJoin() {
-  if (!saveName() || !onlineReady()) return;
-  const code = (document.getElementById("cd").value || "").toUpperCase().replace(/[^A-Z]/g, "");
-  if (code.length !== 4) { homeErr = "Game codes have 4 letters."; render(true); return; }
-  try {
-    if (!(await get(ref(db, gamePath(code) + "/host"))).exists()) { homeErr = "No game with code " + code + ". Check it with your friend."; render(true); return; }
-    const pRef = ref(db, gamePath(code) + "/players/" + myId);
-    await set(pRef, { name: me.name, color: me.color });
-    onDisconnect(pRef).remove();
-    me.code = code; me.host = false; me.g = null; me.res = null; mode = "online"; homeErr = "";
-    listen(code); render(true);
-  } catch (e) { console.error(e); homeErr = "Couldn't join. Check your connection."; render(true); }
-}
-function leave() {
-  if (mode === "online" && db && me.code) {
-    const target = me.host ? ref(db, gamePath(me.code)) : ref(db, gamePath(me.code) + "/players/" + myId);
-    onDisconnect(target).cancel().catch(() => {});
-    remove(target).catch(() => {});
-    stopListen();
-  }
-  me = { name: me.name, color: me.color };
-  mode = "home"; homeErr = ""; render(true);
-}
-function guess(e) {
-  e.preventDefault();
-  const g = gameState(); if (!g || g.phase !== "round") return;
-  const mine = allPeers().find(p => p.isMe);
-  if (resOf(mine, g)[g.round] != null) return;
-  const inp = document.getElementById("gs"), hit = lookup(inp.value);
-  const err = document.getElementById("gerr");
-  if (!hit) { err.textContent = "Not a player we know. Check the spelling or pick from the list."; inp.parentNode.classList.remove("shake"); void inp.offsetWidth; inp.parentNode.classList.add("shake"); return; }
-  const ok = hit.idx === g.order[g.round];
-  const prev = (me.res && me.res.game === g.id) ? me.res.r : {};
-  const r = Object.assign({}, prev, { ["r" + g.round]: { ok, c: g.clue, n: hit.name.slice(0, 30) } });
-  setMe({ res: { game: g.id, r } });
-  render(true);
-}
-
-// ---------- rendering ----------
-let raf = 0;
-function schedule() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(false); }); }
-let lastKey = "";
-const app = document.getElementById("app");
-const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-
-function rosterHTML(g, opts) {
-  const list = inGame().slice();
-  if (opts && opts.sort) list.sort((a, b) => scoreOf(b, g) - scoreOf(a, g));
-  return list.map(p => {
-    const pr = p.presence, x = g ? resOf(p, g)[g.round] : null;
-    let st = "", cls = "";
-    if (opts && opts.score) st = scoreOf(p, g);
-    else if (opts && opts.round) { if (x) { st = x.ok ? "✓ clue " + (x.c + 1) : "✖ locked"; cls = x.ok ? "ok" : "no"; } else st = "thinking…"; }
-    else st = pr.host ? "host" : "ready";
-    return '<div class="pl' + (p.isMe ? " me" : "") + '"><span class="dot" style="background:' + esc(/^#[0-9A-Fa-f]{6}$/.test(pr.color) ? pr.color : "#888") + '"></span><span class="nm">' + esc(String(pr.name).slice(0, 16)) + (p.isMe ? "<em>you</em>" : "") + '</span><span class="st ' + cls + '">' + esc(st) + '</span></div>';
-  }).join("");
-}
-
-function render(force) {
-  const g = mode === "home" ? null : gameState();
-  const mine = allPeers().find(p => p.isMe);
-  const myRes = g ? resOf(mine, g)[g.round] : null;
-  let view = "home";
-  if (mode !== "home") {
-    if (mode === "online" && !me.host && remote.loaded && !remote.exists) view = "ended";
-    else if (!host()) view = me.host ? "lobby" : "nohost";
-    else if (!g) view = "lobby";
-    else view = g.phase;
-  }
-  const key = view + "|" + (g ? g.id + g.round : "") + "|" + (myRes ? "done" : "") + "|" + (view === "home" ? net : "") + "|" + mode;
-  // jumbotron
-  const jc = document.getElementById("jClock"), jl = document.getElementById("jLbl");
-  if (view === "round") { jc.textContent = "Q" + (g.round + 1) + " · " + pts(g.clue); jl.textContent = "Points on the board"; }
-  else if (view === "reveal") { jc.textContent = "Q" + (g.round + 1) + " END"; jl.textContent = "Round over"; }
-  else if (view === "final") { jc.textContent = "FINAL"; jl.textContent = "Game over"; }
-  else if (view === "lobby" || view === "nohost") { jc.textContent = me.code === "SOLO" ? "SOLO" : (me.code || "--"); jl.textContent = "Game code"; }
-  else { jc.textContent = "--"; jl.textContent = "Pregame"; }
-
-  if (force || key !== lastKey) { lastKey = key; build(view, g, myRes); }
-  update(view, g, myRes);
-}
-
-function build(view, g, myRes) {
-  if (view === "home") {
-    const netTxt = net === "on" ? "Online ready" : net === "connecting" ? "Connecting…" : "Online unavailable";
-    app.innerHTML = '<div class="panel">' +
-      '<div class="status ' + (net === "on" ? "on" : net === "off" ? "off" : "") + '"><i></i>' + netTxt + '</div>' +
-      '<h2>Guess the NBA player before your friends do</h2>' +
-      '<ol class="rules"><li>A clue about a secret NBA player appears <b>every 6 seconds</b>, starting with the hardest.</li><li>Guess right on clue 1 for <b>600</b> points, clue 6 for <b>100</b>.</li><li>You get <b>one guess per player</b>. A wrong guess locks you out of that round.</li><li>5 mystery players per game. Highest total wins.</li></ol>' +
-      '<label class="fld">Your name<input type="text" id="nm" maxlength="16" autocomplete="off" value="' + esc(me.name) + '" placeholder="e.g. Yotam"></label>' +
-      '<div class="row"><button class="btn" id="bCreate" type="button">Create game</button></div>' +
-      '<div class="or">or join a friend</div>' +
-      '<div class="row"><input type="text" class="code" id="cd" maxlength="4" autocomplete="off" placeholder="CODE" aria-label="Game code"><button class="btn ghost" id="bJoin" type="button">Join</button></div>' +
-      '<div class="or">or</div>' +
-      '<button class="btn ghost" id="bSolo" type="button">Solo practice</button>' +
-      '<div class="err" id="herr">' + esc(homeErr) + '</div>' +
-      '<div class="note">To play online, send the link to this page to your friends. One person creates a game and the others type its code.</div>' +
-      '</div>';
-    document.getElementById("bCreate").onclick = goCreate;
-    document.getElementById("bJoin").onclick = goJoin;
-    document.getElementById("bSolo").onclick = goSolo;
-    document.getElementById("cd").addEventListener("keydown", e => { if (e.key === "Enter") goJoin(); });
-    return;
-  }
-  if (view === "ended") {
-    app.innerHTML = '<div class="panel"><div class="kicker">Game over</div><h2>The host ended the game</h2><p>The host left or closed the page. Start a new game or join another code.</p><button class="btn" id="bLeave" type="button">Back to home</button></div>';
-    document.getElementById("bLeave").onclick = leave; return;
-  }
-  if (view === "nohost") {
-    app.innerHTML = '<div class="panel"><div class="kicker">Joining game</div><h2>Waiting for game ' + esc(me.code) + '</h2><p>No host with this code is online right now. Check the code with your friend, or wait for them to create the game.</p><div class="roster" id="roster"></div><button class="btn ghost" id="bLeave" type="button">Back</button></div>';
-    document.getElementById("bLeave").onclick = leave; return;
-  }
-  if (view === "lobby") {
-    app.innerHTML = '<div class="panel"><div class="kicker">Lobby</div>' +
-      (me.code !== "SOLO" ? '<div class="codebox"><div class="kicker">Game code</div><div class="c">' + esc(me.code) + '</div></div>' : '') +
-      '<h2 id="lobbyH"></h2><div class="roster" id="roster"></div>' +
-      (me.host ? '<button class="btn" id="bStart" type="button">Tip off</button>' : '<p>The host starts the game when everyone is in.</p>') +
-      '<button class="btn ghost" id="bLeave" type="button">Leave</button></div>';
-    if (me.host) document.getElementById("bStart").onclick = hostStart;
-    document.getElementById("bLeave").onclick = leave; return;
-  }
-  if (view === "round") {
-    app.innerHTML = '<div class="panel">' +
-      '<div class="worth"><div class="kicker">Mystery player ' + (g.round + 1) + ' of ' + ROUNDS + '</div><div>Worth <b id="worth"></b></div></div>' +
-      '<div class="shot"><i id="shot"></i></div>' +
-      '<ol class="clues" id="clues"></ol>' +
-      (myRes ? '<div class="verdict ' + (myRes.ok ? "ok" : "no") + '">' + (myRes.ok ? "Bucket! +" + pts(myRes.c) : "Airball") + '<small>' + (myRes.ok ? "Waiting for the others…" : esc(myRes.n) + " isn't it. You're locked out this round.") + '</small></div>'
-        : '<form class="guess" id="gform"><input type="text" id="gs" list="names" autocomplete="off" placeholder="Type a player" aria-label="Your guess"><button class="btn" type="submit">Shoot</button></form><div class="err" id="gerr"></div>') +
-      '<div class="kicker">On the court</div><div class="roster" id="roster"></div></div>';
-    if (!myRes) { document.getElementById("gform").onsubmit = guess; setTimeout(() => { const i = document.getElementById("gs"); if (i) i.focus({ preventScroll: true }); }, 30); }
-    lastClueSeen = -1; return;
-  }
-  if (view === "reveal") {
-    const p = PLAYERS[g.order[g.round]];
-    app.innerHTML = '<div class="panel"><div class="answer"><div class="kicker">Mystery player ' + (g.round + 1) + ' was</div><div class="who">' + esc(p.name) + '</div></div>' +
-      '<ol class="clues">' + p.clues.map((c, i) => '<li' + (i > g.clue ? ' class="locked"' : '') + '><span class="n">' + (i + 1) + '</span><span>' + esc(c) + '</span></li>').join("") + '</ol>' +
-      '<div class="kicker">This round</div><div class="roster" id="roster"></div>' +
-      '<div class="kicker">Standings</div><div class="board" id="board"></div>' +
-      '<p id="nextIn">' + (g.round < ROUNDS - 1 ? "Next player coming up…" : "Final scores coming up…") + '</p></div>';
-    return;
-  }
-  if (view === "final") {
-    app.innerHTML = '<div class="panel"><div class="kicker">Final buzzer</div><h2 id="champ"></h2><div class="board podium" id="board"></div>' +
-      '<div class="kicker">The five mystery players</div><p>' + g.order.map(i => esc(PLAYERS[i].name)).join(" · ") + '</p>' +
-      (me.host ? '<button class="btn" id="bAgain" type="button">Run it back</button>' : '<p>The host can start a rematch.</p>') +
-      '<button class="btn ghost" id="bLeave" type="button">Leave game</button></div>';
-    if (me.host) document.getElementById("bAgain").onclick = hostStart;
-    document.getElementById("bLeave").onclick = leave; return;
-  }
-}
-
-function update(view, g, myRes) {
-  const ro = document.getElementById("roster");
-  if (view === "lobby" || view === "nohost") {
-    if (ro) ro.innerHTML = rosterHTML(null, {});
-    const h = document.getElementById("lobbyH"); if (h) { const n = inGame().length; h.textContent = me.code === "SOLO" ? "Solo practice" : n + (n === 1 ? " player in the gym" : " players in the gym"); }
-  }
-  if (view === "round") {
-    if (ro) ro.innerHTML = rosterHTML(g, { round: true });
-    const w = document.getElementById("worth"); if (w) w.textContent = myRes ? (myRes.ok ? pts(myRes.c) : 0) : pts(g.clue);
-    const cl = document.getElementById("clues"), p = PLAYERS[g.order[g.round]];
-    if (cl && lastClueSeen !== g.clue) {
-      cl.innerHTML = p.clues.slice(0, g.clue + 1).map((c, i) => '<li' + (i === g.clue && i > 0 ? ' class="new"' : '') + '><span class="n">' + (i + 1) + '</span><span>' + esc(c) + '</span></li>').join("") +
-        (g.clue < 5 ? '<li class="locked"><span class="n">' + (g.clue + 2) + '</span><span>Next clue incoming…</span></li>' : '');
-      lastClueSeen = g.clue; clueSeenAt = performance.now();
-    }
-    const sh = document.getElementById("shot");
-    if (sh) { const f = Math.min(1, (performance.now() - clueSeenAt) / (g.clue < 5 ? CLUE_MS : GRACE_MS)); sh.style.transform = "scaleX(" + f + ")"; }
-  }
-  if (view === "reveal") {
-    if (ro) ro.innerHTML = rosterHTML(g, { round: true });
-    const b = document.getElementById("board"); if (b) b.innerHTML = rosterHTML(g, { score: true, sort: true });
-  }
-  if (view === "final") {
-    const b = document.getElementById("board"); if (b) b.innerHTML = rosterHTML(g, { score: true, sort: true });
-    const c = document.getElementById("champ"), list = inGame().slice().sort((a, b2) => scoreOf(b2, g) - scoreOf(a, g));
-    if (c && list[0]) c.textContent = list.length === 1 ? "You scored " + scoreOf(list[0], g) + " of 3000" : String(list[0].presence.name).slice(0, 16) + " wins it";
-  }
-}
-render(true);
-</script>
+<script type="module" src="game.js"></script>
 </body>
 </html>
